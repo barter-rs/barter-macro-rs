@@ -1,6 +1,6 @@
 extern crate proc_macro;
 
-use convert_case::{Case, Casing};
+use convert_case::{Boundary, Case, Casing};
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::DeriveInput;
@@ -20,13 +20,16 @@ pub fn de_exchange_derive(input: TokenStream) -> TokenStream {
             where
                 D: serde::de::Deserializer<'de>
             {
-                let actual = <String as serde::Deserialize>::deserialize(deserializer)?;
+                let input = <String as serde::Deserialize>::deserialize(deserializer)?;
                 let expected = #exchange::ID.as_str();
 
-                if actual.as_str() == expected {
+                if input.as_str() == expected {
                     Ok(Self::default())
                 } else {
-                    panic!("hey");
+                    Err(serde::de::Error::invalid_value(
+                        serde::de::Unexpected::Str(input.as_str()),
+                        &expected
+                    ))
                 }
             }
         }
@@ -67,7 +70,12 @@ pub fn de_sub_kind_derive(input: TokenStream) -> TokenStream {
 
     // Determine SubKind name
     let sub_kind = &ast.ident;
-    let expected_sub_kind = sub_kind.to_string().to_case(Case::Snake);
+
+    let expected_sub_kind = sub_kind
+        .to_string()
+        .from_case(Case::Pascal)
+        .without_boundaries(&Boundary::letter_digit())
+        .to_case(Case::Snake);
 
     let generated = quote! {
         impl<'de> serde::Deserialize<'de> for #sub_kind {
@@ -75,12 +83,15 @@ pub fn de_sub_kind_derive(input: TokenStream) -> TokenStream {
             where
                 D: serde::de::Deserializer<'de>
             {
-                let actual = <String as serde::Deserialize>::deserialize(deserializer)?;
+                let input = <String as serde::Deserialize>::deserialize(deserializer)?;
 
-                if actual == #expected_sub_kind {
+                if input == #expected_sub_kind {
                     Ok(Self)
                 } else {
-                    panic!("hey");
+                    Err(serde::de::Error::invalid_value(
+                        serde::de::Unexpected::Str(input.as_str()),
+                        &#expected_sub_kind
+                    ))
                 }
             }
         }
